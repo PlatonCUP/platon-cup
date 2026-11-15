@@ -866,9 +866,9 @@ function renderRoster(){
   const moved=act.filter(x=>x.fromWeight&&x.fromWeight!==x.weight);
   let h=moved.length?'<div class="card"><h2>計量による階級変更</h2><p class="small">'+moved.map(x=>esc(x.name)+'（'+esc(x.team)+'）：'+esc(wtext(x.fromWeight))+' → '+esc(wtext(x.weight))).join("<br>")+'</p><p class="small muted">変更した階級は②の組み合わせと③の試合順を作り直す必要があります。</p></div>':'';
   /* 別の階級から上げて出場する選手・出場者1名の階級の不戦優勝の設定 */
-  const based=t.wrestlers.filter(x=>x.baseWeight&&x.baseWeight!==x.weight),AW=t.awards||{},awK=Object.keys(AW).filter(w=>(AW[w]||[]).length);
+  const baseOf=x=>(x.fromWeight&&x.fromWeight!==x.weight)?x.fromWeight:(x.baseWeight&&x.baseWeight!==x.weight)?x.baseWeight:null,based=t.wrestlers.filter(baseOf),AW=t.awards||{},awK=Object.keys(AW).filter(w=>(AW[w]||[]).length);
   if((based.length||awK.length)&&!S.readOnly)h+='<div class="card"><h2>別の階級からの出場・不戦優勝</h2>'+
-    based.map(x=>'<div class="row"><span>'+esc(x.name)+'（'+esc(x.team)+'）：'+esc(wtext(x.baseWeight))+'から'+esc(wtext(x.weight))+'に出場</span><button class="ghost small" data-unbase="'+esc(x.id)+'">'+esc(wtext(x.weight))+'の選手にする（↑の印を外す）</button></div>').join("")+
+    based.map(x=>'<div class="row"><span>'+esc(x.name)+'（'+esc(x.team)+'）：'+esc(wtext(baseOf(x)))+'から'+esc(wtext(x.weight))+'に出場</span><button class="ghost small" data-unbase="'+esc(x.id)+'">'+esc(wtext(x.weight))+'の選手にする（↑の印を外す）</button></div>').join("")+
     awK.map(w=>{const x=t.wrestlers.find(y=>y.id===AW[w][0]);return'<div class="row"><span>'+esc(wtext(w))+' 不戦優勝：'+esc(x?x.name:"（不明）")+'</span><button class="ghost small danger" data-unaward="'+esc(w)+'">不戦優勝を取り消す</button></div>'}).join("")+
     '<p class="small muted">どちらも2回押すと確定します。</p></div>';
   h+=WEIGHTS.filter(w=>g[w].length).map(w=>{
@@ -883,7 +883,7 @@ function renderRoster(){
     if(!b.dataset.armed){b.dataset.armed="1";b.textContent=wtext(to)+"へ移す（確認）";b.classList.add("danger");setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="計量超過→"+wtext(to);b.classList.remove("danger")}},4000);return}
     upd(x.id,w=>{if(!w.fromWeight)w.fromWeight=w.weight;w.weight=to});toast(x.name+"を"+wtext(to)+"へ移しました。②で組み合わせを作り直してください")});
   const arm=(b,f)=>{if(!b.dataset.armed){b.dataset.armed="1";b.dataset.t=b.textContent;b.textContent="もう一度押すと確定";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent=b.dataset.t}},4000);return}f()};
-  out.querySelectorAll("[data-unbase]").forEach(b=>b.onclick=()=>arm(b,()=>{upd(b.dataset.unbase,w=>{delete w.baseWeight});toast("↑の印を外しました")}));
+  out.querySelectorAll("[data-unbase]").forEach(b=>b.onclick=()=>arm(b,()=>{upd(b.dataset.unbase,w=>{delete w.baseWeight;delete w.fromWeight});toast("↑の印を外しました")}));
   out.querySelectorAll("[data-unaward]").forEach(b=>b.onclick=()=>arm(b,()=>{const w=b.dataset.unaward;edit(t=>{if(t.awards){delete t.awards[w];if(!Object.keys(t.awards).length)delete t.awards}});toast(wtext(w)+"の不戦優勝を取り消しました")}));
   out.querySelectorAll("[data-wback]").forEach(b=>b.onclick=()=>{const x=t.wrestlers.find(y=>y.id===b.dataset.wback);if(!x)return;upd(x.id,w=>{w.weight=w.fromWeight;delete w.fromWeight});toast(x.name+"を"+wtext(x.fromWeight)+"に戻しました")});
   out.querySelectorAll("[data-wt]").forEach(sel=>sel.onchange=()=>{const x=t.wrestlers.find(y=>y.id===sel.dataset.wt);upd(sel.dataset.wt,w=>{if(!w.fromWeight)w.fromWeight=w.weight;w.weight=sel.value;if(w.fromWeight===w.weight)delete w.fromWeight});toast((x?x.name:"")+"を"+wtext(sel.value)+"に変更しました。②で組み合わせを作り直してください")});
