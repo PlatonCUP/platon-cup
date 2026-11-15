@@ -1072,12 +1072,16 @@ function scheduleOnce(M,G,aceOf,PS){
   /* 人数の多い階級から先に消化する（間隔の条件より優先はしない） */
   const mem={};M.forEach(m=>{if(m.k==="L")(mem[m.cls]=mem[m.cls]||new Set()).add(m.ws[0]).add(m.ws[1])});
   const sizeOf=c=>mem[c]?mem[c].size:0,leagueAll=Object.assign({},leagueLeft);
+  /* メインイベント（各階級の決勝。決勝のない総当たりの階級はエース同士の試合）は、他の試合を全て終えてから最後にまとめる */
+  const hasFinal={};M.forEach(m=>{if(m.k==="P"&&m.part==="決勝")hasFinal[m.cls]=1});
+  const isMain=m=>m.k==="P"?m.part==="決勝":(!hasFinal[m.cls]&&!!aceOf[m.ws[0]]&&!!aceOf[m.ws[1]]);
   while(rem.length){
     const pos=order.length,V=vpos(pos,PS),gp=k=>last[k]===undefined?Infinity:V-last[k]-1,gl=k=>leagueLast[k]===undefined?Infinity:V-leagueLast[k]-1;
     /* 休憩をはさむ時は、休憩ごとに決めた最低限の実際の試合数（minReal）に届かなければ、実際の試合数で数える */
     const eff=(k,cand)=>{const lr=cand?realLL[k]:realLast[k];if(lr===undefined)return Infinity;const real=pos-lr-1,virt=cand?gl(k):gp(k);return real<reqReal(PS,lr,pos)?real:virt};
     const gapOf=m=>m.k==="L"?Math.min(eff(m.ws[0]),eff(m.ws[1])):Math.min(...m.keys.map(k=>eff(k)),...m.cand.map(k=>eff(k,true)));
-    const avail=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d)))));
+    const avail0=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d))))),nonMain=avail0.filter(m=>!isMain(m));
+    const avail=nonMain.length?nonMain:avail0,mainBlock=!nonMain.length;
     let best=null,bs=-Infinity,bg=0;
     avail.forEach(m=>{const g=gapOf(m);const ok=g>=G;
       let sc=(ok?1000:0)+(ok?0:Math.min(g,G)*50)+sizeOf(m.cls)*8+clsLeft[m.cls]*0.5+Math.random()*3;
@@ -1086,6 +1090,8 @@ function scheduleOnce(M,G,aceOf,PS){
       const pr=pos/N;
       if(m.k==="L"){const a=(aceOf[m.ws[0]]?1:0)+(aceOf[m.ws[1]]?1:0);if(a===2&&pr<0.55)sc-=400;else if(a===1&&pr<0.25)sc-=4}
       else if(m.r===1)sc-=20;else if(m.r===2)sc-=10;
+      /* 最後のまとまりでは、人数の少ない階級から行い、最も大きい階級の決勝を大会の最後にする */
+      if(mainBlock)sc-=sizeOf(m.cls)*20;
       if(sc>bs){bs=sc;best=m;bg=g}});
     if(bg<G)short++;if(bg<minGap)minGap=bg;
     {const im=imp(best,aceOf);lateW+=im*pos/Math.max(1,N-1);impSum+=im}
