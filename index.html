@@ -1060,12 +1060,13 @@ function buildMatches(t){
 /* 見どころの重み：エース同士の予選＝3、エースが出る予選＝1、順位決定戦は1位同士＝4・2位同士＝2・その他1 */
 function imp(m,aceOf){if(m.k==="L"){const a=(aceOf[m.ws[0]]?1:0)+(aceOf[m.ws[1]]?1:0);return a===2?3:a}return m.r===1?4:m.r===2?2:1}
 /* 予定の休憩：after＝その前にある試合数。休憩の分数を試合数に換算し、間隔に足して数える */
-function pauseSlots(pauses,per){return(pauses||[]).map(p=>({after:+p.after,slots:Math.round((+p.min||0)/(+per||4))}))}
+/* minReal：その休憩をはさんでも、実際の試合数で最低これだけは空ける */
+function pauseSlots(pauses,per){return(pauses||[]).map(p=>({after:+p.after,slots:Math.round((+p.min||0)/(+per||4)),minReal:p.minReal!=null?+p.minReal:5}))}
+function reqReal(PS,lastPos,pos){let r=0;(PS||[]).forEach(p=>{if(p.after>lastPos&&p.after<=pos)r=Math.max(r,p.minReal||0)});return r}
 function vpos(i,PS){let v=i;(PS||[]).forEach(p=>{if(p.after<=i)v+=p.slots});return v}
 function scheduleOnce(M,G,aceOf,PS){
   const last={},leagueLast={},realLast={},realLL={},done=new Set(),order=[],rem=M.slice();
-  /* 休憩をはさんでも、実際の試合数で最低これだけは空ける（休憩直前と直後の連戦を防ぐ） */
-  const MINR=Math.ceil(G/2);
+
   const leagueLeft={},clsLeft={};M.forEach(m=>{clsLeft[m.cls]=(clsLeft[m.cls]||0)+1;if(m.k==="L")leagueLeft[m.cls]=(leagueLeft[m.cls]||0)+1});
   const totalL=M.filter(m=>m.k==="L").length,N=M.length;let doneL=0,minGap=Infinity,short=0,lateW=0,impSum=0;
   /* 人数の多い階級から先に消化する（間隔の条件より優先はしない） */
@@ -1073,12 +1074,12 @@ function scheduleOnce(M,G,aceOf,PS){
   const sizeOf=c=>mem[c]?mem[c].size:0,leagueAll=Object.assign({},leagueLeft);
   while(rem.length){
     const pos=order.length,V=vpos(pos,PS),gp=k=>last[k]===undefined?Infinity:V-last[k]-1,gl=k=>leagueLast[k]===undefined?Infinity:V-leagueLast[k]-1;
-    const gapOf=m=>m.k==="L"?Math.min(gp(m.ws[0]),gp(m.ws[1])):Math.min(...m.keys.map(gp),...m.cand.map(gl));
-    const rp=k=>realLast[k]===undefined?Infinity:pos-realLast[k]-1,rl=k=>realLL[k]===undefined?Infinity:pos-realLL[k]-1;
-    const realOf=m=>m.k==="L"?Math.min(rp(m.ws[0]),rp(m.ws[1])):Math.min(...m.keys.map(rp),...m.cand.map(rl));
+    /* 休憩をはさむ時は、休憩ごとに決めた最低限の実際の試合数（minReal）に届かなければ、実際の試合数で数える */
+    const eff=(k,cand)=>{const lr=cand?realLL[k]:realLast[k];if(lr===undefined)return Infinity;const real=pos-lr-1,virt=cand?gl(k):gp(k);return real<reqReal(PS,lr,pos)?real:virt};
+    const gapOf=m=>m.k==="L"?Math.min(eff(m.ws[0]),eff(m.ws[1])):Math.min(...m.keys.map(k=>eff(k)),...m.cand.map(k=>eff(k,true)));
     const avail=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d)))));
     let best=null,bs=-Infinity,bg=0;
-    avail.forEach(m=>{const g0=gapOf(m),r0=realOf(m),g=r0<MINR?Math.min(g0,r0):g0;const ok=g>=G;
+    avail.forEach(m=>{const g=gapOf(m);const ok=g>=G;
       let sc=(ok?1000:0)+(ok?0:Math.min(g,G)*50)+sizeOf(m.cls)*8+clsLeft[m.cls]*0.5+Math.random()*3;
       if(m.k==="P")sc+=m.r*0.8+(m.part.startsWith("準決勝")?2:0);
       /* 見どころの試合ほど後半へ。エース同士は前半に置かない（間隔の条件より優先はしない） */
@@ -1099,14 +1100,12 @@ async function makeSchedule(t,G,onProgress){
   const aceOf={};t.wrestlers.forEach(x=>{if(x.ace)aceOf[x.id]=1});
   const st=settingsOf(t),per=+st.per||4,N=M.length,pauses=[];
   /* 昼休憩：指定の時刻に最も近い試合の後 */
-  if(+st.lunchMin>0&&toMin(st.lunchAt)!=null&&toMin(st.start)!=null){const a=Math.round((toMin(st.lunchAt)-toMin(st.start))/per);if(a>0&&a<N)pauses.push({after:a,min:+st.lunchMin,label:"昼休憩"})}
-  /* 後半の休憩：一度並べてみて、間隔が目標に届かない試合を最も多く救える位置に入れる */
-  if(+st.lateMin>0){const r0=await bestOf(M,G,aceOf,pauseSlots(pauses,per),900,onProgress);const slots=Math.round(+st.lateMin/per);
-    const from=Math.max(pauses.length?pauses[0].after+5:Math.floor(N/2),Math.floor(N/2));let ba=null,bf=-1;
-    for(let a=from;a<N-1;a++){let fixed=0;const last={};r0.order.forEach((m,i)=>{const ids=m.k==="L"?m.ws:null;if(!ids)return;
-        ids.forEach(k=>{if(last[k]!=null&&m.vg!=null&&m.vg<G&&last[k]<a&&i>=a&&m.vg+slots>=G)fixed++});ids.forEach(k=>last[k]=i)});
-      if(fixed>bf||(fixed===bf&&fixed>0)){if(fixed>bf){bf=fixed;ba=a}}}
-    if(ba==null)ba=Math.round(N*0.75);pauses.push({after:ba,min:+st.lateMin,label:"休憩"})}
+  if(+st.lunchMin>0&&toMin(st.lunchAt)!=null&&toMin(st.start)!=null){const a=Math.round((toMin(st.lunchAt)-toMin(st.start))/per);if(a>0&&a<N)pauses.push({after:a,min:+st.lunchMin,label:"昼休憩",minReal:5})}
+  /* 後半の休憩：後半の候補位置ごとに試しに並べ、目標に届かない試合が最も少なくなる位置に入れる */
+  if(+st.lateMin>0){const from=Math.max(pauses.length?pauses[0].after+8:0,Math.floor(N/2)),to=N-6;let ba=null,bk=null;
+    for(let a=from;a<=to;a+=2){const ps=pauses.concat([{after:a,min:+st.lateMin,label:"休憩",minReal:7}]);const r=await bestOf(M,G,aceOf,pauseSlots(ps,per),220,onProgress);
+      const key=[r.short,-(r.minGap??99)];if(!bk||key[0]<bk[0]||(key[0]===bk[0]&&key[1]<bk[1])){bk=key;ba=a}}
+    if(ba==null)ba=Math.round(N*0.75);pauses.push({after:ba,min:+st.lateMin,label:"休憩",minReal:7})}
   const best=await bestOf(M,G,aceOf,pauseSlots(pauses,per),2500,onProgress);
   best.order=best.order.map(m=>{const o={id:m.id,k:m.k,cls:m.cls,cl:m.cl,part:m.part,gap:m.gap,vg:m.vg,brk:m.brk};if(m.k==="L")o.ws=m.ws;else{o.labels=m.labels;o.r=m.r}return o});
   best.pauses=pauses;return best;
@@ -1134,8 +1133,7 @@ function liveGaps(order,C,PS,G){
   const last={},lastL={},out=[];
   order.forEach((o,i)=>{if(o.k==="L")lastL[o.cls]=i});
   order.forEach((o,i)=>{const fm=C.byKey[mkey(o)],p=fm?C.parts(fm):(o.ws||null);let g=null,vg=null;const V=vpos(i,PS);
-    (p||[]).forEach(id=>{if(last[id]!=null){const v=i-last[id][0]-1,w=V-last[id][1]-1;g=g==null?v:Math.min(g,v);vg=vg==null?w:Math.min(vg,w)}});(p||[]).forEach(id=>last[id]=[i,V]);
-    if(G&&g!=null&&g<Math.ceil(G/2))vg=g;
+    (p||[]).forEach(id=>{if(last[id]!=null){const v=i-last[id][0]-1;let w=V-last[id][1]-1;if(v<reqReal(PS,last[id][0],i))w=v;g=g==null?v:Math.min(g,v);vg=vg==null?w:Math.min(vg,w)}});(p||[]).forEach(id=>last[id]=[i,V]);
     out.push({gap:g,vg,brk:g!=null&&vg>g,early:o.k==="P"&&lastL[o.cls]!=null&&i<lastL[o.cls]})});
   return out;
 }
@@ -1218,8 +1216,8 @@ function renderOrder(){
     h+=breakBox(t,E);
     if(ed){const pz=(sch.pauses||[]);
       h+='<details class="fmted adminonly" id="pzBox"'+(S.pzOpen?" open":"")+'><summary>休憩の予定（'+(pz.length?pz.map(p=>esc(p.label||"休憩")+" No."+p.after+"の後 "+p.min+"分").join("、"):"なし")+'）</summary><div class="fmtbody">'+
-        pz.map((p,j)=>'<div class="row"><input type="text" data-pz="'+j+'|label" value="'+esc(p.label||"休憩")+'" style="width:7em"><label class="small">No.<input type="number" min="1" max="'+(sch.order.length-1)+'" data-pz="'+j+'|after" value="'+p.after+'">の後</label><label class="small"><input type="number" min="5" step="5" data-pz="'+j+'|min" value="'+p.min+'">分</label><button class="ghost small danger" data-pzdel="'+j+'">削除</button></div>').join("")+
-        '<button class="ghost small" id="pzAdd">休憩を追加</button><p class="small muted">休憩の時間は、選手の出番の間隔にも数えます（1試合の分数で換算）。</p></div></details>'}
+        pz.map((p,j)=>'<div class="row"><input type="text" data-pz="'+j+'|label" value="'+esc(p.label||"休憩")+'" style="width:7em"><label class="small">No.<input type="number" min="1" max="'+(sch.order.length-1)+'" data-pz="'+j+'|after" value="'+p.after+'">の後</label><label class="small"><input type="number" min="5" step="5" data-pz="'+j+'|min" value="'+p.min+'">分</label><label class="small">休憩後も最低<input type="number" min="0" max="30" data-pz="'+j+'|minReal" value="'+(p.minReal!=null?p.minReal:5)+'">試合空ける</label><button class="ghost small danger" data-pzdel="'+j+'">削除</button></div>').join("")+
+        '<button class="ghost small" id="pzAdd">休憩を追加</button><p class="small muted">休憩の時間は、選手の出番の間隔にも数えます（1試合の分数で換算）。ただし休憩をはさんでも、実際の試合数で「最低○試合」は空けます。</p></div></details>'}
     if(sch.manual)h+='<p class="small muted">手で変更された試合順です。間隔は今の並びで数え直しています（対戦者が未定の順位決定戦は数えていません）。</p>';
     if(early)h+='<p class="banner">予選リーグが終わる前に置かれた順位決定戦が'+early+'試合あります。該当の行に印が付いています。</p>';
     if(short)h+='<p class="small" style="color:var(--warn)">'+short+'試合で間隔が目標（'+sch.G+'試合）に届いていません。該当の試合は「間隔」欄に色が付いています。</p>';
@@ -1247,10 +1245,10 @@ function renderOrder(){
   bindBreak();
   const ab=$("addBox");if(ab)ab.ontoggle=()=>S.addOpen=ab.open;
   const pb=$("pzBox");if(pb)pb.ontoggle=()=>S.pzOpen=pb.open;
-  head.querySelectorAll("[data-pz]").forEach(inp=>inp.onchange=()=>{const[j,f]=inp.dataset.pz.split("|");let v=inp.value;if(f!=="label"){v=parseInt(v,10);if(!(v>=1))return}
+  head.querySelectorAll("[data-pz]").forEach(inp=>inp.onchange=()=>{const[j,f]=inp.dataset.pz.split("|");let v=inp.value;if(f!=="label"){v=parseInt(v,10);if(!(v>=(f==="minReal"?0:1)))return}
     edit(t=>{const p=t.schedule.pauses[+j];if(p)p[f]=f==="label"?(v.trim()||"休憩"):v;t.schedule.pauses.sort((a,b)=>a.after-b.after)})});
   head.querySelectorAll("[data-pzdel]").forEach(b=>b.onclick=()=>edit(t=>{t.schedule.pauses.splice(+b.dataset.pzdel,1)}));
-  const pa=$("pzAdd");if(pa)pa.onclick=()=>edit(t=>{const n=t.schedule.order.length;t.schedule.pauses=(t.schedule.pauses||[]).concat([{after:Math.round(n/2),min:30,label:"休憩"}]).sort((a,b)=>a.after-b.after)});
+  const pa=$("pzAdd");if(pa)pa.onclick=()=>edit(t=>{const n=t.schedule.order.length;t.schedule.pauses=(t.schedule.pauses||[]).concat([{after:Math.round(n/2),min:30,label:"休憩",minReal:7}]).sort((a,b)=>a.after-b.after)});
   const xa=$("xAdd");if(xa)xa.onclick=()=>{const a=$("xA").value,b=$("xB").value,label=$("xL").value.trim()||"追加試合",pos=parseInt($("xP").value,10),count=$("xC").checked;
     if(!a||!b){toast("赤と青の選手を選んでください");return}if(a===b){toast("同じ選手同士は選べません");return}
     edit(t=>{const e={id:rid("e"),a,b,label,count};t.extras=(t.extras||[]).concat([e]);const o=t.schedule.order;const at=Math.max(0,Math.min(o.length,(pos||o.length+1)-1));o.splice(at,0,Object.assign(extraEntry(t,e),{gap:null}));t.schedule.manual=true});
