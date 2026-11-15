@@ -1064,6 +1064,16 @@ function imp(m,aceOf){if(m.k==="L"){const a=(aceOf[m.ws[0]]?1:0)+(aceOf[m.ws[1]]
 function pauseSlots(pauses,per){return(pauses||[]).map(p=>({after:+p.after,slots:Math.round((+p.min||0)/(+per||4)),minReal:p.minReal!=null?+p.minReal:5}))}
 function reqReal(PS,lastPos,pos){let r=0;(PS||[]).forEach(p=>{if(p.after>lastPos&&p.after<=pos)r=Math.max(r,p.minReal||0)});return r}
 function vpos(i,PS){let v=i;(PS||[]).forEach(p=>{if(p.after<=i)v+=p.slots});return v}
+/* 並びの間隔を数え直す（scheduleOnce と同じ数え方） */
+function evalOrder(order,G,PS){const last={},leagueLast={},realLast={},realLL={},out=[];let short=0,minGap=Infinity;
+  order.forEach((m,pos)=>{const V=vpos(pos,PS);const gp=k=>last[k]===undefined?Infinity:V-last[k]-1,gl=k=>leagueLast[k]===undefined?Infinity:V-leagueLast[k]-1;
+    const eff=(k,cand)=>{const lr=cand?realLL[k]:realLast[k];if(lr===undefined)return Infinity;const real=pos-lr-1,virt=cand?gl(k):gp(k);return real<reqReal(PS,lr,pos)?real:virt};
+    const g=m.k==="L"?Math.min(eff(m.ws[0]),eff(m.ws[1])):Math.min(...m.keys.map(k=>eff(k)),...m.cand.map(k=>eff(k,true)));
+    if(g<G)short++;if(g<minGap)minGap=g;
+    const ids=m.k==="L"?m.ws:m.keys;let rg=Infinity;ids.forEach(k=>{if(realLast[k]!==undefined)rg=Math.min(rg,pos-realLast[k]-1)});
+    out.push(Object.assign({},m,{gap:m.k==="L"?(rg===Infinity?null:rg):(g===Infinity?null:g),vg:g===Infinity?null:g,brk:m.k==="L"&&rg!==Infinity&&g>rg}));
+    if(m.k==="L")m.ws.forEach(k=>{last[k]=V;leagueLast[k]=V;realLast[k]=pos;realLL[k]=pos});else m.keys.forEach(k=>{last[k]=V;realLast[k]=pos})});
+  return{order:out,short,minGap:minGap===Infinity?null:minGap}}
 function scheduleOnce(M,G,aceOf,PS){
   const last={},leagueLast={},realLast={},realLL={},done=new Set(),order=[],rem=M.slice();
 
@@ -1072,7 +1082,7 @@ function scheduleOnce(M,G,aceOf,PS){
   /* 人数の多い階級から先に消化する（間隔の条件より優先はしない） */
   const mem={};M.forEach(m=>{if(m.k==="L")(mem[m.cls]=mem[m.cls]||new Set()).add(m.ws[0]).add(m.ws[1])});
   const sizeOf=c=>mem[c]?mem[c].size:0,leagueAll=Object.assign({},leagueLeft);
-  /* メインイベント（各階級の決勝。決勝のない総当たりの階級はエース同士の試合）は、他の試合を全て終えてから最後にまとめる */
+  /* メインイベント（各階級の決勝。決勝のない総当たりの階級はエース同士の試合）は、間隔の条件を守れる範囲で後ろへ寄せる */
   const hasFinal={};M.forEach(m=>{if(m.k==="P"&&m.part==="決勝")hasFinal[m.cls]=1});
   const isMain=m=>m.k==="P"?m.part==="決勝":(!hasFinal[m.cls]&&!!aceOf[m.ws[0]]&&!!aceOf[m.ws[1]]);
   while(rem.length){
@@ -1080,8 +1090,7 @@ function scheduleOnce(M,G,aceOf,PS){
     /* 休憩をはさむ時は、休憩ごとに決めた最低限の実際の試合数（minReal）に届かなければ、実際の試合数で数える */
     const eff=(k,cand)=>{const lr=cand?realLL[k]:realLast[k];if(lr===undefined)return Infinity;const real=pos-lr-1,virt=cand?gl(k):gp(k);return real<reqReal(PS,lr,pos)?real:virt};
     const gapOf=m=>m.k==="L"?Math.min(eff(m.ws[0]),eff(m.ws[1])):Math.min(...m.keys.map(k=>eff(k)),...m.cand.map(k=>eff(k,true)));
-    const avail0=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d))))),nonMain=avail0.filter(m=>!isMain(m));
-    const avail=nonMain.length?nonMain:avail0,mainBlock=!nonMain.length;
+    const avail=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d)))));
     let best=null,bs=-Infinity,bg=0;
     avail.forEach(m=>{const g=gapOf(m);const ok=g>=G;
       let sc=(ok?1000:0)+(ok?0:Math.min(g,G)*50)+sizeOf(m.cls)*8+clsLeft[m.cls]*0.5+Math.random()*3;
@@ -1090,8 +1099,8 @@ function scheduleOnce(M,G,aceOf,PS){
       const pr=pos/N;
       if(m.k==="L"){const a=(aceOf[m.ws[0]]?1:0)+(aceOf[m.ws[1]]?1:0);if(a===2&&pr<0.55)sc-=400;else if(a===1&&pr<0.25)sc-=4}
       else if(m.r===1)sc-=20;else if(m.r===2)sc-=10;
-      /* 最後のまとまりでは、人数の少ない階級から行い、最も大きい階級の決勝を大会の最後にする */
-      if(mainBlock)sc-=sizeOf(m.cls)*20;
+      /* メインイベントは、間隔を守れる他の試合がある間は待たせる（間隔の条件より優先はしない）。人数の多い階級ほど後ろ */
+      if(isMain(m))sc-=250+sizeOf(m.cls)*10;
       if(sc>bs){bs=sc;best=m;bg=g}});
     if(bg<G)short++;if(bg<minGap)minGap=bg;
     {const im=imp(best,aceOf);lateW+=im*pos/Math.max(1,N-1);impSum+=im}
@@ -1099,7 +1108,13 @@ function scheduleOnce(M,G,aceOf,PS){
     order.push(Object.assign({},best,{gap:best.k==="L"?(rg===Infinity?null:rg):(bg===Infinity?null:bg),vg:bg===Infinity?null:bg,brk:best.k==="L"&&rg!==Infinity&&bg>rg}));done.add(best.id);rem.splice(rem.indexOf(best),1);clsLeft[best.cls]--;
     if(best.k==="L"){best.ws.forEach(k=>{last[k]=V;leagueLast[k]=V;realLast[k]=pos;realLL[k]=pos});leagueLeft[best.cls]--;doneL++}else best.keys.forEach(k=>{last[k]=V;realLast[k]=pos});
   }
-  return{order,minGap:minGap===Infinity?null:minGap,short,late:impSum?lateW/impSum:0};
+  /* 最大階級の決勝が最後でなければ、最後へ動かしてみて、間隔が悪くならなければ採用する */
+  const top=Object.keys(mem).sort((a,b)=>sizeOf(b)-sizeOf(a))[0];
+  {const gi=order.findIndex(m=>isMain(m)&&m.cls===top);if(gi>=0&&gi<order.length-1){const o2=order.slice(0,gi).concat(order.slice(gi+1),[order[gi]]);const ev=evalOrder(o2,G,PS);
+    if(ev.short<=short&&(ev.minGap??99)>=(minGap===Infinity?99:minGap)){order.length=0;ev.order.forEach(x=>order.push(x));short=ev.short;minGap=ev.minGap==null?Infinity:ev.minGap}}}
+  const lastM=order[order.length-1];
+  const fl=lastM&&isMain(lastM)&&lastM.cls===top?2:lastM&&isMain(lastM)?1:0;
+  return{order,minGap:minGap===Infinity?null:minGap,short,fl,late:impSum?lateW/impSum:0};
 }
 async function makeSchedule(t,G,onProgress){
   const b=buildMatches(t),problems=b.problems,M=b.M.filter(m=>m.k!=="X");if(problems.length||!M.length)return null;
@@ -1107,12 +1122,16 @@ async function makeSchedule(t,G,onProgress){
   const st=settingsOf(t),per=+st.per||4,N=M.length,pauses=[];
   /* 昼休憩：指定の時刻に最も近い試合の後 */
   if(+st.lunchMin>0&&toMin(st.lunchAt)!=null&&toMin(st.start)!=null){const a=Math.round((toMin(st.lunchAt)-toMin(st.start))/per);if(a>0&&a<N)pauses.push({after:a,min:+st.lunchMin,label:"昼休憩",minReal:5})}
-  /* 後半の休憩：後半の候補位置ごとに試しに並べ、目標に届かない試合が最も少なくなる位置に入れる */
-  if(+st.lateMin>0){const from=Math.max(pauses.length?pauses[0].after+8:0,Math.floor(N/2)),to=N-6;let ba=null,bk=null;
-    for(let a=from;a<=to;a+=2){const ps=pauses.concat([{after:a,min:+st.lateMin,label:"休憩",minReal:7}]);const r=await bestOf(M,G,aceOf,pauseSlots(ps,per),220,onProgress);
-      const key=[r.short,-(r.minGap??99)];if(!bk||key[0]<bk[0]||(key[0]===bk[0]&&key[1]<bk[1])){bk=key;ba=a}}
-    if(ba==null)ba=Math.round(N*0.75);pauses.push({after:ba,min:+st.lateMin,label:"休憩",minReal:7})}
-  const best=await bestOf(M,G,aceOf,pauseSlots(pauses,per),2500,onProgress);
+  /* 後半の休憩：後半の候補位置ごとに試しに並べ、良さそうな2か所を本番と同じ時間で並べ比べて決める */
+  const keyOf=r=>[r.short,-Math.min(r.minGap??99,G+3),-r.fl,-r.late];
+  const better=(x,y)=>{const a=keyOf(x),b=keyOf(y);for(let i=0;i<a.length;i++){if(a[i]!==b[i])return a[i]<b[i]}return false};
+  let best=null;
+  if(+st.lateMin>0){const from=Math.max(pauses.length?pauses[0].after+8:0,Math.floor(N/2)),to=N-6,trial=[];
+    for(let a=from;a<=to;a+=2){const ps=pauses.concat([{after:a,min:+st.lateMin,label:"休憩",minReal:7}]);const r=await bestOf(M,G,aceOf,pauseSlots(ps,per),200,onProgress);trial.push({a,r})}
+    trial.sort((x,y)=>better(x.r,y.r)?-1:better(y.r,x.r)?1:0);
+    let bp=null;for(const c of trial.slice(0,2)){const ps=pauses.concat([{after:c.a,min:+st.lateMin,label:"休憩",minReal:7}]);const r=await bestOf(M,G,aceOf,pauseSlots(ps,per),1400,onProgress);if(!best||better(r,best)){best=r;bp=ps}}
+    if(bp){pauses.length=0;bp.forEach(p=>pauses.push(p))}}
+  if(!best)best=await bestOf(M,G,aceOf,pauseSlots(pauses,per),2500,onProgress);
   best.order=best.order.map(m=>{const o={id:m.id,k:m.k,cls:m.cls,cl:m.cl,part:m.part,gap:m.gap,vg:m.vg,brk:m.brk};if(m.k==="L")o.ws=m.ws;else{o.labels=m.labels;o.r=m.r}return o});
   best.pauses=pauses;return best;
 }
@@ -1122,7 +1141,9 @@ async function bestOf(M,G,aceOf,PS,ms,onProgress){
     for(let k=0;k<15;k++){const r=scheduleOnce(M,G,aceOf,PS);tries++;
       /* 選ぶ順：①目標未満の試合が少ない ②最小の間隔が広い ③見どころの試合が後半に寄っている */
       const a=r.minGap??1e9,b=best?(best.minGap??1e9):0;
-      if(!best||r.short<best.short||(r.short===best.short&&(Math.min(a,G+3)>Math.min(b,G+3)||(Math.min(a,G+3)===Math.min(b,G+3)&&r.late>best.late))))best=r}
+      /* 選ぶ順：①目標未満の試合が少ない ②最小の間隔が広い ③最後が最大階級の決勝 ④見どころの試合が後半に寄っている */
+      const ma=Math.min(a,G+3),mb=Math.min(b,G+3);
+      if(!best||r.short<best.short||(r.short===best.short&&(ma>mb||(ma===mb&&(r.fl>best.fl||(r.fl===best.fl&&r.late>best.late))))))best=r}
     onProgress&&onProgress(tries);await new Promise(r=>setTimeout(r,0));
   }
   return best;
