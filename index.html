@@ -1000,7 +1000,7 @@ function renderDraw(){
       const sc=t.schedule;if(sc&&sc.sig){const fresh=sc.sig;/* 試合順は作り直さず、該当階級の予選の対戦者だけ入れ替える */
         sc.order.forEach(o=>{if(o.k==="L"&&o.cls===w)o.ws=o.ws.map(id=>id===a?b:id===b?a:id)});sc.sig=orderSig(t);sc.manual=true}});
     toast(byId[a].name+"と"+byId[b].name+"を入れ替えました"+(t0.schedule?"（試合順の対戦者も入れ替え済み）":""));
-    const t1=cur();if(t1.schedule){const o=t1.schedule.order,C=computeAll(t1),gp=liveGaps(o,C,schPS(t1)),G=t1.schedule.G||settingsOf(t1).gap;
+    const t1=cur();if(t1.schedule){const o=t1.schedule.order,C=computeAll(t1),G=t1.schedule.G||settingsOf(t1).gap,gp=liveGaps(o,C,schPS(t1),G);
       const bad=o.map((x,i)=>i).filter(i=>o[i].k==="L"&&o[i].cls===w&&(o[i].ws.includes(a)||o[i].ws.includes(b))&&gp[i].vg!=null&&gp[i].vg<G);
       if(bad.length)setTimeout(()=>toast("注意：間隔が目標（"+G+"試合）未満の試合ができました "+bad.map(i=>"No."+(i+1)+"（"+gp[i].gap+"試合）").join("、")),400)}});
   out.querySelectorAll("[data-redo]").forEach(b=>b.onclick=()=>{const w=b.dataset.redo;
@@ -1063,7 +1063,9 @@ function imp(m,aceOf){if(m.k==="L"){const a=(aceOf[m.ws[0]]?1:0)+(aceOf[m.ws[1]]
 function pauseSlots(pauses,per){return(pauses||[]).map(p=>({after:+p.after,slots:Math.round((+p.min||0)/(+per||4))}))}
 function vpos(i,PS){let v=i;(PS||[]).forEach(p=>{if(p.after<=i)v+=p.slots});return v}
 function scheduleOnce(M,G,aceOf,PS){
-  const last={},leagueLast={},realLast={},done=new Set(),order=[],rem=M.slice();
+  const last={},leagueLast={},realLast={},realLL={},done=new Set(),order=[],rem=M.slice();
+  /* 休憩をはさんでも、実際の試合数で最低これだけは空ける（休憩直前と直後の連戦を防ぐ） */
+  const MINR=Math.ceil(G/2);
   const leagueLeft={},clsLeft={};M.forEach(m=>{clsLeft[m.cls]=(clsLeft[m.cls]||0)+1;if(m.k==="L")leagueLeft[m.cls]=(leagueLeft[m.cls]||0)+1});
   const totalL=M.filter(m=>m.k==="L").length,N=M.length;let doneL=0,minGap=Infinity,short=0,lateW=0,impSum=0;
   /* 人数の多い階級から先に消化する（間隔の条件より優先はしない） */
@@ -1072,9 +1074,11 @@ function scheduleOnce(M,G,aceOf,PS){
   while(rem.length){
     const pos=order.length,V=vpos(pos,PS),gp=k=>last[k]===undefined?Infinity:V-last[k]-1,gl=k=>leagueLast[k]===undefined?Infinity:V-leagueLast[k]-1;
     const gapOf=m=>m.k==="L"?Math.min(gp(m.ws[0]),gp(m.ws[1])):Math.min(...m.keys.map(gp),...m.cand.map(gl));
+    const rp=k=>realLast[k]===undefined?Infinity:pos-realLast[k]-1,rl=k=>realLL[k]===undefined?Infinity:pos-realLL[k]-1;
+    const realOf=m=>m.k==="L"?Math.min(rp(m.ws[0]),rp(m.ws[1])):Math.min(...m.keys.map(rp),...m.cand.map(rl));
     const avail=rem.filter(m=>m.k==="L"||(!leagueLeft[m.cls]&&(!m.dep||m.dep.every(d=>done.has(d)))));
     let best=null,bs=-Infinity,bg=0;
-    avail.forEach(m=>{const g=gapOf(m);const ok=g>=G;
+    avail.forEach(m=>{const g0=gapOf(m),r0=realOf(m),g=r0<MINR?Math.min(g0,r0):g0;const ok=g>=G;
       let sc=(ok?1000:0)+(ok?0:Math.min(g,G)*50)+sizeOf(m.cls)*8+clsLeft[m.cls]*0.5+Math.random()*3;
       if(m.k==="P")sc+=m.r*0.8+(m.part.startsWith("準決勝")?2:0);
       /* 見どころの試合ほど後半へ。エース同士は前半に置かない（間隔の条件より優先はしない） */
@@ -1086,7 +1090,7 @@ function scheduleOnce(M,G,aceOf,PS){
     {const im=imp(best,aceOf);lateW+=im*pos/Math.max(1,N-1);impSum+=im}
     const ids=best.k==="L"?best.ws:best.keys;let rg=Infinity;ids.forEach(k=>{if(realLast[k]!==undefined)rg=Math.min(rg,pos-realLast[k]-1)});
     order.push(Object.assign({},best,{gap:best.k==="L"?(rg===Infinity?null:rg):(bg===Infinity?null:bg),vg:bg===Infinity?null:bg,brk:best.k==="L"&&rg!==Infinity&&bg>rg}));done.add(best.id);rem.splice(rem.indexOf(best),1);clsLeft[best.cls]--;
-    if(best.k==="L"){best.ws.forEach(k=>{last[k]=V;leagueLast[k]=V;realLast[k]=pos});leagueLeft[best.cls]--;doneL++}else best.keys.forEach(k=>{last[k]=V;realLast[k]=pos});
+    if(best.k==="L"){best.ws.forEach(k=>{last[k]=V;leagueLast[k]=V;realLast[k]=pos;realLL[k]=pos});leagueLeft[best.cls]--;doneL++}else best.keys.forEach(k=>{last[k]=V;realLast[k]=pos});
   }
   return{order,minGap:minGap===Infinity?null:minGap,short,late:impSum?lateW/impSum:0};
 }
@@ -1126,11 +1130,12 @@ function extraEntry(t,e){
   return{id:"x_"+e.id,k:"X",cls,cl,part:e.label||"追加試合",ws:[e.a,e.b],xid:e.id,count};
 }
 /* 実際の並びから、各試合の間隔を数え直す（手で並べ替えた時用）。予選より前に置かれた順位決定戦も見つける */
-function liveGaps(order,C,PS){
+function liveGaps(order,C,PS,G){
   const last={},lastL={},out=[];
   order.forEach((o,i)=>{if(o.k==="L")lastL[o.cls]=i});
   order.forEach((o,i)=>{const fm=C.byKey[mkey(o)],p=fm?C.parts(fm):(o.ws||null);let g=null,vg=null;const V=vpos(i,PS);
     (p||[]).forEach(id=>{if(last[id]!=null){const v=i-last[id][0]-1,w=V-last[id][1]-1;g=g==null?v:Math.min(g,v);vg=vg==null?w:Math.min(vg,w)}});(p||[]).forEach(id=>last[id]=[i,V]);
+    if(G&&g!=null&&g<Math.ceil(G/2))vg=g;
     out.push({gap:g,vg,brk:g!=null&&vg>g,early:o.k==="P"&&lastL[o.cls]!=null&&i<lastL[o.cls]})});
   return out;
 }
@@ -1179,7 +1184,7 @@ function bindBreak(){
 }
 /* 指定したNo.の試合と、その選手たちの次の試合の間隔が目標未満なら知らせる */
 function gapAlert(idx){
-  const t=cur();if(!t||!t.schedule)return;const C=computeAll(t),G=t.schedule.G||settingsOf(t).gap,o=t.schedule.order,gp=liveGaps(o,C,schPS(t));
+  const t=cur();if(!t||!t.schedule)return;const C=computeAll(t),G=t.schedule.G||settingsOf(t).gap,o=t.schedule.order,gp=liveGaps(o,C,schPS(t),G);
   const byId=Object.fromEntries(t.wrestlers.map(x=>[x.id,x]));const fm=C.byKey[mkey(o[idx])],p=fm?C.parts(fm):o[idx].ws;
   const bad=[];if(gp[idx]&&gp[idx].vg!=null&&gp[idx].vg<G)bad.push("No."+(idx+1)+"（前の出番から"+gp[idx].gap+"試合）");
   if(p)for(let j=idx+1;j<o.length;j++){const f2=C.byKey[mkey(o[j])],p2=f2?C.parts(f2):o[j].ws;if(p2&&p2.some(id=>p.includes(id))){if(gp[j].vg!=null&&gp[j].vg<G)bad.push("No."+(j+1)+"（"+gp[j].gap+"試合）");break}}
@@ -1201,7 +1206,7 @@ function renderOrder(){
   if(solo.length)h+='<p class="small muted">'+esc(solo.map(wtext).join("・"))+'は1名のみのため試合がありません（②で合同を検討できます）。</p>';
   if(stale)h+='<p class="banner">組み合わせが変わったため、この試合順は古くなっています。「試合順を作り直す」を押してください。</p>';
   let gaps=null,minGap=sch?sch.minGap:null,short=sch?sch.short:0,early=0;
-  if(sch&&(sch.manual||sch.pauses)){gaps=liveGaps(sch.order,C,schPS(t));const v=gaps.map(x=>x.vg).filter(x=>x!=null);minGap=v.length?Math.min(...v):null;short=v.filter(x=>x<sch.G).length;early=gaps.filter(x=>x.early).length}
+  if(sch&&(sch.manual||sch.pauses)){gaps=liveGaps(sch.order,C,schPS(t),sch.G);const v=gaps.map(x=>x.vg).filter(x=>x!=null);minGap=v.length?Math.min(...v):null;short=v.filter(x=>x<sch.G).length;early=gaps.filter(x=>x.early).length}
   if(sch){
     const E=eta(t,C),end=E.end,tg=toMin(st.target);
     h+='<div class="row figs"><div class="sumfig left"><span class="small muted">試合数</span><b class="num">'+sch.order.length+'</b></div>'+
@@ -1401,7 +1406,7 @@ function renderResults(){
   if(!t||!t.schedule){head.innerHTML="";out.innerHTML='<div class="empty"><h3>試合順がまだありません</h3><p class="small muted">③で試合順を作ると、ここで結果を入力できます。</p></div>';$("standOut").innerHTML="";return}
   const C=computeAll(t),byId=Object.fromEntries(t.wrestlers.map(x=>[x.id,x]));
   const rows=t.schedule.order.map((o,i)=>({o,i,m:C.byKey[mkey(o)]})).filter(x=>x.m);
-  const LG=liveGaps(t.schedule.order,C,schPS(t)),GG=t.schedule.G||settingsOf(t).gap,ET=eta(t,C);
+  const GG=t.schedule.G||settingsOf(t).gap,LG=liveGaps(t.schedule.order,C,schPS(t),GG),ET=eta(t,C);
   const doneN=rows.filter(x=>getRes(x.m)).length;
   const stale=t.schedule.sig!==orderSig(t);
   head.innerHTML='<div class="card"><div class="row between"><div><h2>結果入力</h2><p class="small muted">勝者と勝ち方を入れると勝ち点を自動で付けます。予選リーグが終わると順位を出し、順位決定戦の対戦者を自動で当てはめます。途中棄権の選手の残り試合は「不戦」で入力してください。</p></div>'+
