@@ -371,11 +371,6 @@ table.order tr.pm td{background:var(--mat-soft)}
 .pill.prev.pr2{background:rgba(138,150,168,.2);color:#7d899b}
 .pill.prev.pr3{background:rgba(180,116,58,.18);color:#b06f35}
 .ptags{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0}.ptags:empty{display:none}.ptags .pill{margin-left:0}
-.chkrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
-.chkrow:first-of-type{border-top:0}
-.chkrow .chkname{flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
-.chkrow .chkname .team{width:100%}
-.chkrow button.primary{min-width:7.5em;min-height:44px}
 .chkdone{color:var(--ok,#16a34a);font-weight:700;white-space:nowrap}.chkdone small{font-weight:400;margin-left:6px;color:var(--muted)}
 </style>
 
@@ -395,7 +390,6 @@ table.order tr.pm td{background:var(--mat-soft)}
 
   <div class="tabs" role="tablist">
     <button class="tab adminonly" role="tab" id="tab-roster" aria-selected="true"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg><span class="step">①</span>選手登録</button>
-    <button class="tab adminonly" role="tab" id="tab-check" aria-selected="false"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>計量・検診</button>
     <button class="tab adminonly" role="tab" id="tab-draw" aria-selected="false"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg><span class="step">②</span>組み合わせ抽選</button>
     <button class="tab" role="tab" id="tab-order" aria-selected="false"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="step">③</span>試合順</button>
     <button class="tab adminonly" role="tab" id="tab-res" aria-selected="false"><svg class="ico" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="step">④</span>結果入力</button>
@@ -442,9 +436,6 @@ table.order tr.pm td{background:var(--mat-soft)}
     </div>
   </section>
 
-  <section class="panel" id="panel-check" hidden>
-    <div id="checkOut" class="panel"></div>
-  </section>
   <section class="panel" id="panel-draw" hidden>
     <div class="card">
       <div class="row between">
@@ -871,10 +862,14 @@ function renderRoster(){
   const wsel=x=>'<select data-wt="'+esc(x.id)+'" aria-label="'+esc(x.name)+'の階級"'+dis+'>'+WEIGHTS.map(w=>'<option value="'+w+'"'+(w===x.weight?" selected":"")+'>'+wtext(w)+'</option>').join("")+'</select>';
   const upW=w=>WEIGHTS[WEIGHTS.indexOf(w)+1]||null;
   const wnote=x=>x.fromWeight&&x.fromWeight!==x.weight?'<span class="pill" data-s="stale">計量超過</span>'+(S.readOnly?'':' <button class="ghost small" data-wback="'+esc(x.id)+'">元に戻す</button>'):'';
-  const row=x=>'<tr'+(champBan(x)?' class="banrow"':'')+'><td>'+esc(x.name)+(x.retired?' <span class="pill" data-s="stale">棄権</span>':'')+' '+champNote(x)+' '+tags(x,{all:true,ctx:mixOf(t,x.weight)})+' '+wnote(x)+'</td><td>'+esc(x.team)+'</td><td>'+wsel(x)+(upW(x.weight)&&!S.readOnly?'<button class="ghost small" data-wup="'+esc(x.id)+'" title="当日計量で規定体重を超えた時、1つ上の階級へ移します">計量超過→'+esc(wtext(upW(x.weight)))+'</button>':'')+'</td><td class="c"><input type="checkbox" data-ace="'+esc(x.id)+'" aria-label="'+esc(x.name)+'をエースにする"'+(x.ace?" checked":"")+dis+'></td><td class="c nowrap"><button class="ghost small" data-wd="'+esc(x.id)+'"'+dis+' title="試合前の棄権。組み合わせから外します">棄権</button><button class="ghost small" data-del="'+esc(x.id)+'"'+dis+' aria-label="'+esc(x.name)+'を削除">削除</button></td></tr>';
-  const head='<thead><tr><th>氏名</th><th>所属</th><th>階級</th><th class="c">エース</th><th class="c">操作</th></tr></thead>';
+  const row=x=>'<tr'+(champBan(x)?' class="banrow"':'')+'><td>'+esc(x.name)+(x.retired?' <span class="pill" data-s="stale">棄権</span>':'')+' '+champNote(x)+' '+tags(x,{all:true,ctx:mixOf(t,x.weight)})+' '+wnote(x)+'</td><td>'+esc(x.team)+'</td><td>'+wsel(x)+(upW(x.weight)&&!S.readOnly?'<button class="ghost small" data-wup="'+esc(x.id)+'" title="当日計量で規定体重を超えた時、1つ上の階級へ移します">計量超過→'+esc(wtext(upW(x.weight)))+'</button>':'')+'</td><td class="c nowrap">'+chkCell(x)+'</td><td class="c"><input type="checkbox" data-ace="'+esc(x.id)+'" aria-label="'+esc(x.name)+'をエースにする"'+(x.ace?" checked":"")+dis+'></td><td class="c nowrap"><button class="ghost small" data-wd="'+esc(x.id)+'"'+dis+' title="試合前の棄権。組み合わせから外します">棄権</button><button class="ghost small" data-del="'+esc(x.id)+'"'+dis+' aria-label="'+esc(x.name)+'を削除">削除</button></td></tr>';
+  const chkCell=x=>{const c=chkOf(x.id);if(c){const d=new Date(c.at);return'<span class="chkdone">✓ OK<small>'+(isNaN(d)?"":hm(d.getHours()*60+d.getMinutes()))+'</small></span>'+(S.readOnly?'':'<button class="ghost small" data-chkoff="'+esc(x.id)+'">取消</button>')}return S.readOnly?'<span class="small muted">まだ</span>':'<button class="small" data-chkon="'+esc(x.id)+'">OKにする</button>'};
+  const head='<thead><tr><th>氏名</th><th>所属</th><th>階級</th><th class="c">計量・検診</th><th class="c">エース</th><th class="c">操作</th></tr></thead>';
   const moved=act.filter(x=>x.fromWeight&&x.fromWeight!==x.weight);
-  let h=moved.length?'<div class="card"><h2>計量による階級変更</h2><p class="small">'+moved.map(x=>esc(x.name)+'（'+esc(x.team)+'）：'+esc(wtext(x.fromWeight))+' → '+esc(wtext(x.weight))).join("<br>")+'</p><p class="small muted">変更した階級は②の組み合わせと③の試合順を作り直す必要があります。</p></div>':'';
+  const okN=act.filter(x=>chkOf(x.id)).length,notOk=act.filter(x=>!chkOf(x.id));
+  let h='<div class="card"><div class="row between"><div><h2>計量・メディカルチェック</h2><p class="small muted">計量に合格し、メディカルチェックにも問題がなかった選手は、名簿の「OKにする」を押します。計量に通らなかった選手は「計量超過→」で1つ上の階級へ移します。</p></div><div class="sumfig"><span class="small muted">OK</span><b class="num">'+okN+' / '+act.length+' 名</b></div></div>'+
+    (okN&&notOk.length&&notOk.length<=12?'<p class="small">まだ：'+notOk.map(x=>esc(x.name)+'（'+esc(wtext(x.weight))+'）').join("、")+'</p>':'')+'</div>';
+  h+=moved.length?'<div class="card"><h2>計量による階級変更</h2><p class="small">'+moved.map(x=>esc(x.name)+'（'+esc(x.team)+'）：'+esc(wtext(x.fromWeight))+' → '+esc(wtext(x.weight))).join("<br>")+'</p><p class="small muted">変更した階級は②の組み合わせと③の試合順を作り直す必要があります。</p></div>':'';
   /* 別の階級から上げて出場する選手・出場者1名の階級の不戦優勝の設定 */
   const baseOf=x=>(x.fromWeight&&x.fromWeight!==x.weight)?x.fromWeight:(x.baseWeight&&x.baseWeight!==x.weight)?x.baseWeight:null,based=t.wrestlers.filter(baseOf),AW=t.awards||{},awK=Object.keys(AW).filter(w=>(AW[w]||[]).length);
   if((based.length||awK.length)&&!S.readOnly)h+='<div class="card"><h2>別の階級からの出場・不戦優勝</h2>'+
@@ -892,6 +887,8 @@ function renderRoster(){
   out.querySelectorAll("[data-wup]").forEach(b=>b.onclick=()=>{const x=t.wrestlers.find(y=>y.id===b.dataset.wup);if(!x)return;const to=upW(x.weight);if(!to)return;
     if(!b.dataset.armed){b.dataset.armed="1";b.textContent=wtext(to)+"へ移す（確認）";b.classList.add("danger");setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="計量超過→"+wtext(to);b.classList.remove("danger")}},4000);return}
     upd(x.id,w=>{if(!w.fromWeight)w.fromWeight=w.weight;w.weight=to});toast(x.name+"を"+wtext(to)+"へ移しました。②で組み合わせを作り直してください")});
+  out.querySelectorAll("[data-chkon]").forEach(b=>b.onclick=()=>setChk(b.dataset.chkon,true));
+  out.querySelectorAll("[data-chkoff]").forEach(b=>b.onclick=()=>{if(!b.dataset.armed){b.dataset.armed="1";b.textContent="本当に取消";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="取消"}},4000);return}setChk(b.dataset.chkoff,false)});
   const arm=(b,f)=>{if(!b.dataset.armed){b.dataset.armed="1";b.dataset.t=b.textContent;b.textContent="もう一度押すと確定";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent=b.dataset.t}},4000);return}f()};
   out.querySelectorAll("[data-unbase]").forEach(b=>b.onclick=()=>arm(b,()=>{upd(b.dataset.unbase,w=>{delete w.baseWeight;delete w.fromWeight});toast("↑の印を外しました")}));
   out.querySelectorAll("[data-unaward]").forEach(b=>b.onclick=()=>arm(b,()=>{const w=b.dataset.unaward;edit(t=>{if(t.awards){delete t.awards[w];if(!Object.keys(t.awards).length)delete t.awards}});toast(wtext(w)+"の不戦優勝を取り消しました")}));
@@ -1437,7 +1434,7 @@ function ensureResSub(){
   if(S.resFor===S.currentId)return;S.resFor=S.currentId;
   if(S.unsubR){S.unsubR();S.unsubR=null}S.results={};
   if(!S.db||!S.currentId)return;
-  S.unsubR=S.db.collection("tournaments/"+S.currentId+"/results").onSnapshot(snap=>{const r={};snap.docs.forEach(d=>{if(d.exists)r[d.id]=d.data()});S.results=r;renderResults();renderOrder();renderPlayers();renderBracket();renderFinal();renderCheck()},
+  S.unsubR=S.db.collection("tournaments/"+S.currentId+"/results").onSnapshot(snap=>{const r={};snap.docs.forEach(d=>{if(d.exists)r[d.id]=d.data()});S.results=r;renderResults();renderOrder();renderPlayers();renderBracket();renderFinal();renderRoster()},
     e=>{if(e&&e.code!=="revoked")toast("結果の読み込みが止まりました。ページを開き直してください")});
 }
 function resText(r,p,byId){
@@ -1716,7 +1713,7 @@ function applyMode(){
   if(S.local)S.admin=true;
   S.readOnly=S.platformRO||!S.admin;
   document.body.classList.toggle("viewer",!S.admin);
-  if(!S.admin&&["roster","check","draw","res"].includes(S.tab))S.tab="bracket";
+  if(!S.admin&&["roster","draw","res"].includes(S.tab))S.tab="bracket";
 }
 async function issueAdminUrl(){
   if(!S.db||!S.admin)return;
@@ -1789,28 +1786,11 @@ function renderFinal(){
    記録は結果と同じ置き場（results）に "chk_選手id" で保存する。選手ごとに別の記録なので、複数の審判員が同時に付けても消し合わない */
 function chkOf(id){return S.results["chk_"+id]||null}
 function setChk(id,ok){const k="chk_"+id;
-  if(ok)S.results[k]={ok:true,at:new Date().toISOString()};else delete S.results[k];renderCheck();
+  if(ok)S.results[k]={ok:true,at:new Date().toISOString()};else delete S.results[k];renderRoster();
   if(!S.db||!S.currentId)return;const ref=S.db.collection("tournaments/"+S.currentId+"/results").doc(k);
   rchain=rchain.then(()=>ok?ref.set(clone(S.results[k])):ref.delete()).catch(e=>toast(e&&e.code==="permission-denied"?"保存できませんでした。管理者用URLで開き直してください":"保存に失敗しました。もう一度押してください"))}
-function renderCheck(){
-  const out=$("checkOut");if(!out)return;const t=cur();
-  if(!t||!t.wrestlers.length){out.innerHTML='<div class="empty"><h3>選手が登録されていません</h3></div>';return}
-  const act=t.wrestlers.filter(x=>!x.withdrawn),okN=act.filter(x=>chkOf(x.id)).length,q=(S.chkQ||"").trim(),only=!!S.chkOnly;
-  const hit=x=>(!q||x.name.includes(q)||x.team.includes(q))&&(!only||!chkOf(x.id));
-  let h='<div class="card"><div class="row between"><div><h2>計量・メディカルチェック</h2><p class="small muted">計量に合格し、メディカルチェックにも問題がなかった選手に「OK」を付けてください。</p></div><div class="sumfig"><span class="small muted">OK</span><b class="num">'+okN+' / '+act.length+' 名</b></div></div>'+
-    '<div class="row"><input type="search" id="chkQ" placeholder="名前・大学で探す" value="'+esc(q)+'" style="flex:1;min-width:10em"><label class="small"><input type="checkbox" id="chkOnly"'+(only?" checked":"")+'> まだの選手だけ</label></div></div>';
-  h+=WEIGHTS.map(w=>{const list=act.filter(x=>x.weight===w&&hit(x));if(!list.length)return"";const all=act.filter(x=>x.weight===w),n=all.filter(x=>chkOf(x.id)).length;
-    return'<div class="card"><div class="row between"><span class="wtag">'+wlabel(w)+'</span><span class="small muted">OK '+n+' / '+all.length+'名</span></div>'+list.map(x=>{const c=chkOf(x.id);
-      return'<div class="chkrow'+(c?' ok':'')+'"><div class="chkname"><b>'+esc(x.name)+'</b>'+tags(x,{ctx:mixOf(t,x.weight)})+'<span class="team">'+esc(x.team)+'</span></div>'+
-        (c?'<span class="chkdone">✓ OK<small>'+(()=>{const d=new Date(c.at);return isNaN(d)?"":hm(d.getHours()*60+d.getMinutes())})()+'</small></span>'+(S.readOnly?'':'<button class="ghost small" data-chkoff="'+esc(x.id)+'">取り消す</button>'):(S.readOnly?'<span class="small muted">まだ</span>':'<button class="primary" data-chkon="'+esc(x.id)+'">OKにする</button>'))+'</div>'}).join("")+'</div>'}).join("")||'<p class="small muted">該当する選手はいません。</p>';
-  out.innerHTML=h;
-  const qi=$("chkQ");qi.oninput=()=>{S.chkQ=qi.value;const p=qi.selectionStart;renderCheck();const n=$("chkQ");n.focus();try{n.setSelectionRange(p,p)}catch(e){}};
-  $("chkOnly").onchange=e=>{S.chkOnly=e.target.checked;renderCheck()};
-  out.querySelectorAll("[data-chkon]").forEach(b=>b.onclick=()=>setChk(b.dataset.chkon,true));
-  out.querySelectorAll("[data-chkoff]").forEach(b=>b.onclick=()=>{if(!b.dataset.armed){b.dataset.armed="1";b.textContent="本当に取り消す";setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent="取り消す"}},4000);return}setChk(b.dataset.chkoff,false)});
-}
 function renderTabs(){
-  ["roster","check","draw","order","res","players","bracket","final","photos"].forEach(k=>{$("tab-"+k).setAttribute("aria-selected",S.tab===k);$("panel-"+k).hidden=S.tab!==k});
+  ["roster","draw","order","res","players","bracket","final","photos"].forEach(k=>{$("tab-"+k).setAttribute("aria-selected",S.tab===k);$("panel-"+k).hidden=S.tab!==k});
 }
 function renderMode(){
   const b=$("modebanner");
@@ -1819,12 +1799,11 @@ function renderMode(){
   else b.hidden=true;
   ["importText","btnParse","addName","addTeam","addWeight","addAce","btnAdd"].forEach(id=>$(id).disabled=S.readOnly||!cur());
 }
-function renderAll(){ensureResSub();loadChamps();applyMode();renderAccess();renderTbar();renderMode();renderTabs();renderStrip();renderPreview();renderRoster();renderDraw();renderOrder();renderResults();renderPlayers();renderBracket();renderFinal();renderPhotos();renderCheck()}
+function renderAll(){ensureResSub();loadChamps();applyMode();renderAccess();renderTbar();renderMode();renderTabs();renderStrip();renderPreview();renderRoster();renderDraw();renderOrder();renderResults();renderPlayers();renderBracket();renderFinal();renderPhotos()}
 
 /* ---------- static wiring ---------- */
 $("addWeight").innerHTML=WEIGHTS.map(w=>'<option value="'+w+'">'+wtext(w)+'</option>').join("");
 $("tab-roster").onclick=()=>{S.tab="roster";renderTabs();store("platon.tab","roster")};
-$("tab-check").onclick=()=>{S.tab="check";renderTabs();store("platon.tab","check")};
 $("tab-draw").onclick=()=>{S.tab="draw";renderTabs();store("platon.tab","draw")};
 $("tab-order").onclick=()=>{S.tab="order";renderTabs();store("platon.tab","order")};
 $("tab-res").onclick=()=>{S.tab="res";renderTabs();store("platon.tab","res")};
@@ -1842,8 +1821,8 @@ $("btnAdd").onclick=()=>{const name=$("addName").value.trim(),team=$("addTeam").
 $("btnDrawAll").onclick=()=>{const t=cur();if(!t)return;const g=byClass(t);doDraw(blocks(t,g).map(c=>c.length===1?c[0]:isMix(c,g)?c.join("+"):null).filter(Boolean),true)};
 
 store("platon.admintoken","");
-const savedTab=store("platon.tab");if(["check","draw","order","res","players","bracket","final","photos"].includes(savedTab))S.tab=savedTab;
-if(location.hash&&!urlToken()&&["roster","check","draw","order","res","players","bracket","final","photos"].includes(location.hash.slice(1)))S.tab=location.hash.slice(1);
+const savedTab=store("platon.tab");if(["draw","order","res","players","bracket","final","photos"].includes(savedTab))S.tab=savedTab;
+if(location.hash&&!urlToken()&&["roster","draw","order","res","players","bracket","final","photos"].includes(location.hash.slice(1)))S.tab=location.hash.slice(1);
 renderAll();
 
 /* ---------- boot：Firebase（誰でもサインインなしで閲覧。書き込みは合言葉付きURLの端末だけ） ---------- */
